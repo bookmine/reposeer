@@ -100,6 +100,8 @@ def main(argv):
         help=u'метод обработки файлов (' + u'|'.join(config.methods.keys()) + ')')
     parser.add_option('-r', '--remove-empty', action='store_true', dest='remove_empty', default=False,
         help=u'удалять пустые обработанные каталоги')
+    parser.add_option('-n', '--dry-run', action='store_true', dest='dry_run', default=False,
+        help="Don't perform write actions, just simulate")
 
     try:
         (options, args) = parser.parse_args()
@@ -161,13 +163,15 @@ def main(argv):
                 dest = os.path.join(config.dest, dest)
 
                 # если такой директории ещё нет, то создадим
-                if not os.path.isdir(os.path.dirname(dest)):
-                    os.makedirs(os.path.dirname(dest))
+                if not options.dry_run:
+                    if not os.path.isdir(os.path.dirname(dest)):
+                        os.makedirs(os.path.dirname(dest))
                 
                 duplicate = os.path.isfile(dest)
                 if not duplicate:
                     try:
-                        config.methods[options.method](source, dest)
+                        if not options.dry_run:
+                            config.methods[options.method](source, dest)
                     except OSError as e:
                         raise FatalError(errmsg.format(e))
             except IOError as e:
@@ -175,6 +179,8 @@ def main(argv):
             return duplicate
 
         def remove_if_empty(path):
+            if options.dry_run:
+                return
             if options.remove_empty and dirsize(path) == 0:
                 shutil.rmtree(path)
 
