@@ -8,12 +8,18 @@ import os
 import csv
 import hashlib
 import shutil
+import logging
+import time
 
 from const import *
 from common import *
 from config import Config
-from pbar import ProgressBar
+from pbar import ProgressBar, ProgressBarSafeLogger
 from cmd import OptionParser, OptionFormatter, OptionError
+
+
+logging.basicConfig(level=logging.INFO)
+log = ProgressBarSafeLogger(logging.getLogger())
 
 try:
     config = Config()
@@ -38,14 +44,15 @@ def md5hash(path):
         raise FatalError(u'Ошибка при чтении файла {0}: {1!s}'.format(path, e))
     return hobj.hexdigest().lower()
 
-def loadlibgen(csvname):
+def loadlibgen(csvname, options):
     ''' Загружает в память csv-файл с базой Library Genesis и возвращает словарь,
     где ключ — md5-хеш файла (строка в нижнем регистре), а значение — кортеж (путь к файлу, размер файла) '''
 
     try:
         with open(csvname) as csvfile:
             # инициализируем прогрессбар
-            pbar = ProgressBar(maxval=len(open(csvname).readlines()))
+            pbar = ProgressBar(maxval=len(open(csvname).readlines()), enabled=options.pbar)
+            log.set_pbar(pbar)
             csvfile.seek(0)
 
             data = csv.reader(csvfile, delimiter=',', quotechar='"')
@@ -102,6 +109,8 @@ def main(argv):
         help=u'удалять пустые обработанные каталоги')
     parser.add_option('-n', '--dry-run', action='store_true', dest='dry_run', default=False,
         help="Don't perform write actions, just simulate")
+    parser.add_option('', '--no-progressbar', action='store_false', dest='pbar', default=True,
+        help="Don't show progress bar")
 
     try:
         (options, args) = parser.parse_args()
@@ -148,7 +157,7 @@ def main(argv):
 
     try:
         # загружаем базу
-        library = loadlibgen(options.filename) # library[md5] == (filename, size)
+        library = loadlibgen(options.filename, options) # library[md5] == (filename, size)
         libsizes = set(second(value) for value in library.values())
 
         print(u'Оцениваем общий размер анализируемых файлов...')
@@ -170,6 +179,7 @@ def main(argv):
                 duplicate = os.path.isfile(dest)
                 if not duplicate:
                     try:
+                        log.info('Performing %s: %s -> %s', options.method, source, dest)
                         if not options.dry_run:
                             config.methods[options.method](source, dest)
                     except OSError as e:
@@ -193,7 +203,8 @@ def main(argv):
         processed, added, duplicate = ProgressCounter(), ProgressCounter(), ProgressCounter()
 
         # инициализируем индикатор прогресса
-        pbar = ProgressBar(maxval=source_size, displaysize=True, width=40)
+        pbar = ProgressBar(maxval=source_size, displaysize=True, width=40, enabled=options.pbar)
+        log.set_pbar(pbar)
         delta = source_size / CHECK_PROGRESS_DIVIDER
 
         for path, dirs, files in os.walk(config.source):
